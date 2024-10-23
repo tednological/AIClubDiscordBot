@@ -471,10 +471,10 @@ async def help(ctx):
             'permissions': 'Available to all users.'  # Adjust if you add permissions
         },
         {
-        'name': '!emailpdf',
-        'usage': '!emailpdf <email_address> <filename1>, [filename2], ...',
-        'description': 'Emails the specified PDFs to the given email address.',
-        'permissions': 'Requires the **PDF Uploader** role.'
+            'name': '!emailpdf',
+            'usage': '!emailpdf <email_address> <filename1>, [filename2], ...',
+            'description': 'Emails the specified PDFs to the given email address.',
+            'permissions': 'Requires the **PDF Uploader** role.'
         },
         {
             'name': '!myscore',
@@ -501,13 +501,6 @@ async def help(ctx):
             'description': 'Opts you out of the helpfulness scoring system.',
             'permissions': 'Available to all users.'
         },
-        # Administrator Command
-        {
-            'name': '!resetscores',
-            'usage': '!resetscores',
-            'description': 'Resets all user scores in the database. **Use with caution!**',
-            'permissions': 'Requires administrator permissions.'
-        }
     ]
 
     embed = nextcord.Embed(title='📖 Help - List of Commands', color=nextcord.Color.green())
@@ -858,15 +851,73 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Process replies to tracked questions
-    await check_for_reply(message)
+    TRACK_CHANNEL_ID = 123456789012345678  
 
-    # Check if the message is a question
-    if is_question(message.content):
-        await track_question(message)
+    # Only process messages in the specified channel
+    if message.channel.id == TRACK_CHANNEL_ID:
+        # Process replies to tracked questions
+        await check_for_reply(message)
+
+        # Check if the message is a question
+        if is_question(message.content):
+            await track_question(message)
 
     # Process other bot commands and events
     await bot.process_commands(message)
+
+@bot.command()
+async def summarize(ctx):
+    try:
+        # Fetch the last 15 messages
+        messages = await ctx.channel.history(limit=15).flatten()
+
+        # Prepare the conversation string
+        conversation = ""
+        for message in reversed(messages):
+            if message.author.bot:
+                continue  # Skip bot messages
+            if message.content:
+                author = message.author.display_name
+                content = message.content.strip()
+                conversation += f"{author}: {content}\n"
+
+        # Check if there's any content to summarize
+        if not conversation.strip():
+            await ctx.send("There's no conversation to summarize.")
+            return
+
+        # Create the prompt You are a helpful assistant that summarizes conversations.
+        prompt = f"Summarize the following conversation:\n\n{conversation}"
+
+        # Call the OpenAI API
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that summarizes conversations."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=150,
+            n=1,
+            stop=None,
+            temperature=0.7,
+        )
+
+        # Extract the summary
+        summary = response.choices[0].message.content.strip()
+
+        # Send the summary back to the channel
+        if len(summary) > 2000:
+            await ctx.send("The summary is too long to display.")
+        else:
+            await ctx.send(f"**Summary of the last 15 messages:**\n{summary}")
+
+    except openai.error.OpenAIError as e:
+        await ctx.send("An error occurred with the AI service.")
+        print(f"OpenAI API error: {e}")
+    except Exception as e:
+        await ctx.send("An unexpected error occurred.")
+        print(f"Unexpected error: {e}")
+        
 
 # Make a complement to pair with the roasts
 datoken = os.getenv('NEW_BOT_TOKEN')
